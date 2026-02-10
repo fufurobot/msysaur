@@ -1,0 +1,122 @@
+# an script to fetch repo from aur.archlinux.org and convert it to msys2 repo
+
+# the key of converting is to add prefix mingw-w64-x86_64- for pacman package name
+
+# this is tested under python of msys2 MINGW64 only
+
+UNIQUE_PREFIXES = [
+    'mingw-w64-clang-aarch64',
+    'mingw-w64-clang-x86_64',
+    'mingw-w64-ucrt-x86_64',
+    'mingw-w64-x86_64',
+]
+
+PREFIX_DICT = {
+    "MINGW64": "mingw-w64-x86_64",
+    "UCRT64": "mingw-w64-ucrt-x86_64",
+    "CLANG64": "mingw-w64-clang-x86_64",
+    "CLANGARM64": "mingw-w64-clang-aarch64",
+}
+
+import argparse
+import os
+import subprocess
+import sys
+import urllib
+import urllib.request
+import urllib.parse
+import json
+import shutil
+
+# we act just like an aur wrapper
+# we read the env variable MSYSTEM to determine the prefix
+# we only support msysaur -Ss to search aur and -S to install from aur for now
+
+# for other commands, we just delegate to pacman
+
+
+def get_prefix():
+    prefix = os.getenv("MSYSTEM")
+    if prefix:
+        prefix = PREFIX_DICT.get(prefix)
+    return prefix
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", nargs="+")
+    args = parser.parse_args()
+    # check first option is -S or -Ss
+    if args.command[0] not in ["-S", "-Ss"]:
+        subprocess.run(["pacman"] + args.command)
+        return
+
+    prefix = get_prefix()
+    if not prefix:
+        print("MSYSTEM is not set or not supported")
+        sys.exit(1)
+    
+    # check git and makepkg on PATH
+    if "git" not in subprocess.check_output(["which", "git"]).decode():
+        print("git is not found in PATH")
+        sys.exit(1)
+    if "makepkg" not in subprocess.check_output(["which", "makepkg"]).decode():
+        print("makepkg is not found in PATH")
+        sys.exit(1)
+
+def search_mode(package):
+    # use rpc to search
+    curl_cmd = f"""curl -X 'GET' \
+  'https://aur.archlinux.org/rpc/v5/search/cuda?by={package}' \
+  -H 'accept: application/json'"""
+    result = subprocess.check_output(curl_cmd, shell=True)
+    # parse name and description from "results"
+    result_json = json.loads(result)
+    for result in result_json["results"]:
+        name = result["Name"]
+        description = result["Description"]
+        print(f"{name} - {description}")
+
+def resolve_dependencies(*packages):
+    # first we use pacman with prefix to check whether packages are available in msys2/mingw repository
+    packages = list(packages)
+    prefix = get_prefix()
+    for pkg in packages:
+        # check original name and name with prefix
+        prefixed_name = prefix + "-" + pkg
+        for check_pkg in [pkg, prefixed_name]:
+            pacman_check = subprocess.check_output(["pacman", "-Si", check_pkg]).strip()
+            if len(pacman_check) > 0:
+                yield {
+                    "name": pkg,
+                    "msys_pacman_name": check_pkg,
+                }
+                packages.remove(pkg)
+                break
+
+    # use rpc to get dependencies and make dependencies list
+    # use urllib to construct curl reqest
+    #curl -X 'GET' \
+    #'https://aur.archlinux.org/rpc/v5/info?arg%5B%5D=git-git&arg%5B%5D=ollama-cuda-git&arg%5B%5D=pikaur' \
+    #-H 'accept: application/json'
+    query_string = urllib.parse.urlencode({"arg[]": packages})
+    request = urllib.request.Request(f"https://aur.archlinux.org/rpc/v5/info?{query_string}", headers={"accept": "application/json"}, method="GET")
+    response = urllib.request.urlopen(request)
+    pkginfos = json.loads(response.read())["results"]
+
+    for pkginfo in pkginfos:
+        yield {"name": pkginfo["Name"], "msys_pacman_name": None, "dependencies": pkginfo["Depends"], "make_depends": pkginfo["MakeDepends"], "check_depends": pkginfo["CheckDepends"], "optional_depends": pkginfo["OptionalDepends"]}
+        #TODO: recursively parse dependencies
+    
+    
+
+def install_mode(package):
+    # fetch repo from aur
+
+    subprocess.run(["git", "clone", "https://aur.archlinux.org/" + package + ".git"])
+    # add prefix to cloned repo
+    prefix = get_prefix()
+    new_name =  prefix + "-" + package
+    shutil.move(package, new_name)
+    subprocess.run(["cd", new_name])
+    
+    # get dependencies from 
