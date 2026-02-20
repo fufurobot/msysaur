@@ -4,6 +4,28 @@
 
 # this is tested under python of msys2 MINGW64 only
 
+__doc__ = """
+msysaur is a Python script that fetches repositories from aur.archlinux.org and converts them to msys2 repositories.
+
+This script is designed to work with the MSYS2 environment on Windows, Linux, and macOS. It uses the MSYSTEM environment variable to determine the prefix for the conversion.
+
+The script supports two main modes of operation: search and install. The search mode uses the RPC API to search for packages based on a given package name. The install mode fetches a repository from aur.archlinux.org, adds a prefix to the cloned repository, and prepares it for installation.
+
+The script also checks for the availability of git and makepkg on the system's PATH.
+
+Usage:
+    msysaur.py [-h] [-S | -Ss] package ...
+
+Options:
+    -h, --help     Show this help message and exit.
+    -S, --install  Install the specified package(s) from aur.archlinux.org.
+    -Ss, --search  Search for the specified package(s) on aur.archlinux.org.
+
+Example:
+    msysaur.py -Ss cuda
+    msysaur.py -S git-git olamma-cuda-git pikaur
+"""
+
 UNIQUE_PREFIXES = [
     'mingw-w64-clang-aarch64',
     'mingw-w64-clang-x86_64',
@@ -120,4 +142,3 @@ def install_mode(package):
     subprocess.run(["cd", new_name])
     
     # TODO get dependencies from rpc
-    
