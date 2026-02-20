@@ -119,4 +119,5 @@ def install_mode(package):
     shutil.move(package, new_name)
     subprocess.run(["cd", new_name])
     
-    # get dependencies from 
+    # TODO get dependencies from rpc
+    
