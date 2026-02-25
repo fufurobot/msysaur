@@ -114,7 +114,9 @@ def resolve_dependencies(*packages):
                 }
                 packages.remove(pkg)
                 break
-
+    
+    if len(packages) == 0:
+        return
     # use rpc to get dependencies and make dependencies list
     # use urllib to construct curl reqest
     #curl -X 'GET' \
