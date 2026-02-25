@@ -49,6 +49,10 @@ import urllib.request
 import urllib.parse
 import json
 import shutil
+import functools
+from collections import defaultdict
+
+PARSED_ARGS = defaultdict(lambda: False)
 
 # we act just like an aur wrapper
 # we read the env variable MSYSTEM to determine the prefix
@@ -56,17 +60,24 @@ import shutil
 
 # for other commands, we just delegate to pacman
 
-
+@functools.cache
 def get_prefix():
     prefix = os.getenv("MSYSTEM")
     if prefix:
         prefix = PREFIX_DICT.get(prefix)
     return prefix
 
+@functools.cache
+def get_all_packages_in_pacman():
+    if PARSED_ARGS["verbose"]:
+        print("getting all packages in pacman", file=sys.stderr)
+    return set(subprocess.check_output(["pacman", "-Sql"]).decode().splitlines())
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("command", nargs="+")
     args = parser.parse_args()
+    PARSED_ARGS.update(vars(args))
     # check first option is -S or -Ss
     if args.command[0] not in ["-S", "-Ss"]:
         subprocess.run(["pacman"] + args.command)
@@ -106,8 +117,7 @@ def resolve_dependencies(*packages):
         # check original name and name with prefix
         prefixed_name = prefix + "-" + pkg
         for check_pkg in [pkg, prefixed_name]:
-            return_code = subprocess.call(["pacman", "-Si", check_pkg])
-            if return_code == 0:
+            if check_pkg in get_all_packages_in_pacman():
                 yield {
                     "name": pkg,
                     "msys_pacman_name": check_pkg,
@@ -155,3 +165,6 @@ def install_mode(package):
     subprocess.run(["cd", new_name])
     
     # TODO get dependencies from rpc
+
+if __name__ == "__main__":
+    main()
