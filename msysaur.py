@@ -40,6 +40,7 @@ PREFIX_DICT = {
     "CLANGARM64": "mingw-w64-clang-aarch64",
 }
 
+import pdb
 import argparse
 import os
 import subprocess
@@ -112,8 +113,11 @@ def search_mode(package):
 import re
 def parse_dependency_expression(package_string):
     """parse something like a or a<b (<=, =, ==, ...)"""
+    return [package_string]
+    # FIXME: this may return empty list. pdb required to debug
     delim = re.compile(r"[\~\<\>\=]{0,2}")
-    return delim.split(package_string)
+    result_list = delim.split(package_string)
+    return result_list
 
 
 def resolve_dependencies(*packages):
