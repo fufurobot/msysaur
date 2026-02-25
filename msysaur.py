@@ -109,6 +109,13 @@ def search_mode(package):
         description = result["Description"]
         print(f"{name} - {description}")
 
+import re
+def parse_dependency_expression(package_string):
+    """parse something like a or a<b (<=, =, ==, ...)"""
+    delim = re.compile(r"[\~\<\>\=]{0,2}")
+    return delim.split(package_string)
+
+
 def resolve_dependencies(*packages):
     # first we use pacman with prefix to check whether packages are available in msys2/mingw repository
     packages = list(packages)
@@ -136,7 +143,7 @@ def resolve_dependencies(*packages):
     request = urllib.request.Request(f"https://aur.archlinux.org/rpc/v5/info?{query_string}", headers={"accept": "application/json"}, method="GET")
     response = urllib.request.urlopen(request)
     pkginfos = json.loads(response.read())["results"]
-
+    # FIXME: rpc return zero results if package is not found. should raise error
     collected_dependencies = []
 
     for pkginfo in pkginfos:
@@ -147,6 +154,10 @@ def resolve_dependencies(*packages):
         resolved_pkg = {"name": pkginfo["Name"], "msys_pacman_name": None, "Depends": deps, "MakeDepends": make_deps, "CheckDepends": check_deps, "OptionalDepends": opt_deps}
         # recursively parse dependencies
         yield resolved_pkg
+        # FIXME: if encounter something like `gcc10-libs=10.5.0-2` the base package name is gcc10-libs and we should install versioned package. now we just install blindly
+        deps = [parse_dependency_expression(x)[0] for x in deps]
+        make_deps = [parse_dependency_expression(x)[0] for x in make_deps]
+        check_deps = [parse_dependency_expression(x)[0] for x in check_deps]
         collected_dependencies.extend(deps)
         # FIXME: now we install everything including make_depends, check_depends do not clean up after install the package. we should clean up make_depends and check_depends after install
         collected_dependencies.extend(make_deps)
