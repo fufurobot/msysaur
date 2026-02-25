@@ -88,7 +88,7 @@ def main():
 def search_mode(package):
     # use rpc to search
     curl_cmd = f"""curl -X 'GET' \
-  'https://aur.archlinux.org/rpc/v5/search/cuda?by={package}' \
+  'https://aur.archlinux.org/rpc/v5/search/{package}' \
   -H 'accept: application/json'"""
     result = subprocess.check_output(curl_cmd, shell=True)
     # parse name and description from "results"
@@ -106,8 +106,8 @@ def resolve_dependencies(*packages):
         # check original name and name with prefix
         prefixed_name = prefix + "-" + pkg
         for check_pkg in [pkg, prefixed_name]:
-            pacman_check = subprocess.check_output(["pacman", "-Si", check_pkg]).strip()
-            if len(pacman_check) > 0:
+            return_code = subprocess.call(["pacman", "-Si", check_pkg])
+            if return_code == 0:
                 yield {
                     "name": pkg,
                     "msys_pacman_name": check_pkg,
@@ -120,16 +120,27 @@ def resolve_dependencies(*packages):
     #curl -X 'GET' \
     #'https://aur.archlinux.org/rpc/v5/info?arg%5B%5D=git-git&arg%5B%5D=ollama-cuda-git&arg%5B%5D=pikaur' \
     #-H 'accept: application/json'
-    query_string = urllib.parse.urlencode({"arg[]": packages})
+    query_string = urllib.parse.urlencode({"arg[]": packages}, doseq=True)
     request = urllib.request.Request(f"https://aur.archlinux.org/rpc/v5/info?{query_string}", headers={"accept": "application/json"}, method="GET")
     response = urllib.request.urlopen(request)
     pkginfos = json.loads(response.read())["results"]
 
+    collected_dependencies = []
+
     for pkginfo in pkginfos:
-        yield {"name": pkginfo["Name"], "msys_pacman_name": None, "dependencies": pkginfo["Depends"], "make_depends": pkginfo["MakeDepends"], "check_depends": pkginfo["CheckDepends"], "optional_depends": pkginfo["OptionalDepends"]}
-        #TODO: recursively parse dependencies
-    
-    
+        deps = pkginfo.get("Depends", [])
+        make_deps = pkginfo.get("MakeDepends", [])
+        check_deps = pkginfo.get("CheckDepends", [])
+        opt_deps = pkginfo.get("OptionalDepends", [])
+        resolved_pkg = {"name": pkginfo["Name"], "msys_pacman_name": None, "Depends": deps, "MakeDepends": make_deps, "CheckDepends": check_deps, "OptionalDepends": opt_deps}
+        # recursively parse dependencies
+        yield resolved_pkg
+        collected_dependencies.extend(deps)
+        # FIXME: now we install everything including make_depends, check_depends do not clean up after install the package. we should clean up make_depends and check_depends after install
+        collected_dependencies.extend(make_deps)
+        collected_dependencies.extend(check_deps)
+    # FIXME: tailed recursion can be optimized as loop
+    yield from resolve_dependencies(*collected_dependencies)
 
 def install_mode(package):
     # fetch repo from aur
