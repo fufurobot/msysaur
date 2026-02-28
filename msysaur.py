@@ -113,11 +113,14 @@ def search_mode(package):
 import re
 def parse_dependency_expression(package_string):
     """parse something like a or a<b (<=, =, ==, ...)"""
-    return [package_string]
-    # FIXME: this may return empty list. pdb required to debug
+    return package_string.replace("<", "").replace(">", "").split("=")
+    # FIXME below code may return empty list. pdb required to debug
     delim = re.compile(r"[\~\<\>\=]{0,2}")
-    result_list = delim.split(package_string)
-    return result_list
+    if not delim.search(package_string):
+        return [package_string]
+    else:
+        return delim.split(package_string)
+    
 
 
 def resolve_dependencies(*packages):
@@ -143,11 +146,27 @@ def resolve_dependencies(*packages):
     #curl -X 'GET' \
     #'https://aur.archlinux.org/rpc/v5/info?arg%5B%5D=git-git&arg%5B%5D=ollama-cuda-git&arg%5B%5D=pikaur' \
     #-H 'accept: application/json'
-    query_string = urllib.parse.urlencode({"arg[]": packages}, doseq=True)
+    
+    # this is not a right way to search. should use search api and provides field like
+    # curl -X 'GET' \
+    #   'https://aur.archlinux.org/rpc/v5/search/nvidia-utils?by=provides' \
+    #   -H 'accept: application/json'
+    collected_available_packages = set()
+    for pkg_item in packages:
+        request = urllib.request.Request(f"https://aur.archlinux.org/rpc/v5/search/{pkg_item}?by=provides", headers={"accept": "application/json"}, method="GET")
+        response = urllib.request.urlopen(request)
+        available_packages = json.loads(response.read())["results"]
+        if len(available_packages) == 0:
+            raise ValueError(f"package {pkg_item} not found in aur")
+        for available_package in available_packages:
+            collected_available_packages.add(available_package["PackageBase"])
+    
+    query_string = urllib.parse.urlencode({"arg[]": collected_available_packages}, doseq=True)
     request = urllib.request.Request(f"https://aur.archlinux.org/rpc/v5/info?{query_string}", headers={"accept": "application/json"}, method="GET")
     response = urllib.request.urlopen(request)
     pkginfos = json.loads(response.read())["results"]
-    # FIXME: rpc return zero results if package is not found. should raise error
+    
+    # rpc return zero results if package is not found. should raise error
     collected_dependencies = []
 
     for pkginfo in pkginfos:
