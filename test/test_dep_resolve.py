@@ -1,4 +1,4 @@
-from ..msysaur import resolve_dependencies
+from ..src.msysaur.msysaur import resolve_dependencies
 
 import sys
 import ast
@@ -25,6 +25,22 @@ def freeze_json(json_object):
     else:
         raise TypeError("unhashable type which is not dict or list: %s" % type(json_object))
 
+import pytest
+
+# parameterized test
+
+data = "" \
+"proxy-ns oh-my-zsh-git mitmproxy-git " \
+"nginx-mod-rtmp" \
+"".strip().split()
+
+@pytest.mark.parametrize("package", data)
+def test_santy_check(package):
+    for item in resolve_dependencies(package):
+        print(item, file=sys.stderr)
+
+# mark as slow
+@pytest.mark.slow
 def test_cuda114_resolve():
     expected = """
         {'name': 'cuda11.4', 'msys_pacman_name': None, 'Depends': ['gcc10-libs', 'gcc10', 'opencl-nvidia', 'nvidia-utils', 'python'], 'MakeDepends': [], 'CheckDepends': [], 'OptionalDepends': []}
